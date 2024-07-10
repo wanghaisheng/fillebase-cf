@@ -1,4 +1,12 @@
-# jsonbase
+https://claude.ai/chat/78cce1bc-d560-4fc8-a491-11bbb8f0fde9
+
+在claude ai里试了一下 但还没有部署测试 
+
+
+一方面是想用在我本地pdf论文的集中管理，另一方面是想保存网站的静态文件
+
+# filebase
+
 
 [English README](./README_EN.md)
 
