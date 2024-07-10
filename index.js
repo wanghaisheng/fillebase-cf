@@ -1,62 +1,89 @@
 /**
- * Cloudflare Workers 入口
+ * Cloudflare Workers entry point
  */
 addEventListener("fetch", (event) => {
-  const { request } = event
+  const { request } = event;
   if (request.method === "POST") {
-    // 如果是 POST 请求，则写入 JSON 数据
-    return event.respondWith(WriteJSON(request))
+    return event.respondWith(WriteFile(request));
   } else if (request.method === "GET") {
-    // 如果是 GET 请求，则读取 JSON 数据
-    return event.respondWith(ReadJSON(request))
-  }
-  else {
-    // 如果不是 GET 和 POST 请求，则返回 500
+    return event.respondWith(ReadFile(request));
+  } else {
     return fetch("https://http.cat/500");
   }
 });
 
 /**
- * 
- * @param {*} response 解析 JSON 数据
- * @returns 
+ * Get file extension from pathname
+ * @param {string} pathname
+ * @returns {string}
  */
-async function gatherResponse(response) {
-  const { headers } = response
-  const contentType = headers.get("content-type") || ""
-  if (contentType.includes("application/json")) {
-    return JSON.stringify(await response.json())
+function getFileExtension(pathname) {
+  const parts = pathname.split('.');
+  return parts.length > 1 ? parts.pop().toLowerCase() : '';
+}
+
+/**
+ * Get content type based on file extension
+ * @param {string} extension
+ * @returns {string}
+ */
+function getContentType(extension) {
+  switch (extension) {
+    case 'json':
+      return 'application/json';
+    case 'pdf':
+      return 'application/pdf';
+    case 'txt':
+      return 'text/plain';
+    default:
+      return 'application/octet-stream';
   }
 }
 
 /**
- * 
- * @param {*} request 请求体
- * @returns 
+ * Read file from KV storage
+ * @param {Request} request
+ * @returns {Promise<Response>}
  */
-async function ReadJSON(request) {
+async function ReadFile(request) {
   const { pathname } = new URL(request.url);
-  // 从 KV 数据库中读取 JSON 数据
-  // 此步骤需要在 Cloudflare Workers 中绑定 KV 数据库并设置别名为 JSONBASE
-  const value = await JSONBASE.get(pathname)
+  const extension = getFileExtension(pathname);
+  const contentType = getContentType(extension);
+
+  const value = await FILEBASE.get(pathname, 'arrayBuffer');
   if (value === null) {
-    // 如果没有找到 JSON 数据，则返回 404
     return fetch("https://http.cat/404");
   }
-  return new Response(value)
+
+  return new Response(value, {
+    headers: { "Content-Type": contentType },
+  });
 }
 
 /**
- * 
- * @param {*} request 请求体
- * @returns 
+ * Write file to KV storage
+ * @param {Request} request
+ * @returns {Promise<Response>}
  */
-async function WriteJSON(request) {
+async function WriteFile(request) {
   const { pathname } = new URL(request.url);
-  const Body = await gatherResponse(request)
-  // 将 JSON 数据写入 KV 数据库
-  await JSONBASE.put(pathname, Body)
-  return new Response(JSON.stringify({ Body }), {
+  const contentType = request.headers.get("Content-Type") || "application/octet-stream";
+
+  let body;
+  if (contentType === "application/json") {
+    // For JSON, we parse and stringify to ensure valid JSON
+    const json = await request.json();
+    body = JSON.stringify(json);
+  } else {
+    // For other types, we store as ArrayBuffer
+    body = await request.arrayBuffer();
+  }
+
+  await FILEBASE.put(pathname, body, {
+    metadata: { contentType: contentType }
+  });
+
+  return new Response(JSON.stringify({ success: true, contentType: contentType }), {
     headers: { "Content-Type": "application/json" },
   });
 }
